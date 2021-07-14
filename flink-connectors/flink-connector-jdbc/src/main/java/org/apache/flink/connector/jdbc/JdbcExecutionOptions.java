@@ -31,16 +31,28 @@ public class JdbcExecutionOptions implements Serializable {
 	public static final int DEFAULT_MAX_RETRY_TIMES = 3;
 	private static final int DEFAULT_INTERVAL_MILLIS = 0;
 	public static final int DEFAULT_SIZE = 5000;
+	public static final boolean DEFAULT_MLRECONNECTIONFLAG = false;
+
 
 	private final long batchIntervalMs;
 	private final int batchSize;
 	private final int maxRetries;
+	private boolean mlReconnectionFlag;
+
 
 	private JdbcExecutionOptions(long batchIntervalMs, int batchSize, int maxRetries) {
 		Preconditions.checkArgument(maxRetries >= 1);
 		this.batchIntervalMs = batchIntervalMs;
 		this.batchSize = batchSize;
 		this.maxRetries = maxRetries;
+	}
+
+	private JdbcExecutionOptions(long batchIntervalMs, int batchSize, int maxRetries,boolean mlReconnectionFlagV) {
+		Preconditions.checkArgument(maxRetries >= 1);
+		this.batchIntervalMs = batchIntervalMs;
+		this.batchSize = batchSize;
+		this.maxRetries = maxRetries;
+		this.mlReconnectionFlag=mlReconnectionFlagV;
 	}
 
 	public long getBatchIntervalMs() {
@@ -55,6 +67,12 @@ public class JdbcExecutionOptions implements Serializable {
 		return maxRetries;
 	}
 
+	public boolean getMlReconnectionFlag() {
+		return mlReconnectionFlag;
+	}
+
+
+
 	@Override
 	public boolean equals(Object o) {
 		if (this == o) {
@@ -66,12 +84,13 @@ public class JdbcExecutionOptions implements Serializable {
 		JdbcExecutionOptions that = (JdbcExecutionOptions) o;
 		return batchIntervalMs == that.batchIntervalMs &&
 			batchSize == that.batchSize &&
-			maxRetries == that.maxRetries;
+			maxRetries == that.maxRetries &&
+			mlReconnectionFlag==that.mlReconnectionFlag;
 	}
 
 	@Override
 	public int hashCode() {
-		return Objects.hash(batchIntervalMs, batchSize, maxRetries);
+		return Objects.hash(batchIntervalMs, batchSize, maxRetries,mlReconnectionFlag);
 	}
 
 	public static Builder builder() {
@@ -89,9 +108,15 @@ public class JdbcExecutionOptions implements Serializable {
 		private long intervalMs = DEFAULT_INTERVAL_MILLIS;
 		private int size = DEFAULT_SIZE;
 		private int maxRetries = DEFAULT_MAX_RETRY_TIMES;
+		private boolean mlReconnectionFlagV=DEFAULT_MLRECONNECTIONFLAG;
 
 		public Builder withBatchSize(int size) {
 			this.size = size;
+			return this;
+		}
+
+		public Builder withMlReconnectionFlag(boolean mlReconnectionFlag) {
+			this.mlReconnectionFlagV = mlReconnectionFlag;
 			return this;
 		}
 
@@ -106,7 +131,7 @@ public class JdbcExecutionOptions implements Serializable {
 		}
 
 		public JdbcExecutionOptions build() {
-			return new JdbcExecutionOptions(intervalMs, size, maxRetries);
+			return new JdbcExecutionOptions(intervalMs, size, maxRetries,mlReconnectionFlagV);
 		}
 	}
 }

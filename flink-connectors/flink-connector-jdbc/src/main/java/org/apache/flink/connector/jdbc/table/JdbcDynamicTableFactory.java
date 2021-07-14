@@ -148,6 +148,14 @@ public class JdbcDynamicTableFactory implements DynamicTableSourceFactory, Dynam
 		.defaultValue(3)
 		.withDescription("the max retry times if writing records to database failed.");
 
+	private static final ConfigOption<Boolean> MILDLINKER_RECONNECT_FLAG = ConfigOptions
+		.key("mildlinker.reconnect-flag")
+		.booleanType()
+		.defaultValue(false)
+		.withDescription("resolve mindlinker writing records to database failed. "
+			+ "first logic is max retry times"
+			+ "second is connect isvalid try to reestablishConnection new one ");
+
 	@Override
 	public DynamicTableSink createDynamicTableSink(Context context) {
 		final FactoryUtil.TableFactoryHelper helper = FactoryUtil.createTableFactoryHelper(this, context);
@@ -218,6 +226,8 @@ public class JdbcDynamicTableFactory implements DynamicTableSourceFactory, Dynam
 		builder.withBatchSize(config.get(SINK_BUFFER_FLUSH_MAX_ROWS));
 		builder.withBatchIntervalMs(config.get(SINK_BUFFER_FLUSH_INTERVAL).toMillis());
 		builder.withMaxRetries(config.get(SINK_MAX_RETRIES));
+		builder.withMlReconnectionFlag(config.get(MILDLINKER_RECONNECT_FLAG));
+		System.out.println("ML Reconnetion init");
 		return builder.build();
 	}
 
@@ -264,6 +274,7 @@ public class JdbcDynamicTableFactory implements DynamicTableSourceFactory, Dynam
 		optionalOptions.add(SINK_BUFFER_FLUSH_MAX_ROWS);
 		optionalOptions.add(SINK_BUFFER_FLUSH_INTERVAL);
 		optionalOptions.add(SINK_MAX_RETRIES);
+		optionalOptions.add(MILDLINKER_RECONNECT_FLAG);
 		return optionalOptions;
 	}
 

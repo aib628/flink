@@ -92,10 +92,10 @@ public class JdbcBatchingOutputFormat<In, JdbcIn, JdbcExec extends JdbcBatchStat
 	private transient volatile Exception flushException;
 
 	public JdbcBatchingOutputFormat(
-			@Nonnull JdbcConnectionProvider connectionProvider,
-			@Nonnull JdbcExecutionOptions executionOptions,
-			@Nonnull StatementExecutorFactory<JdbcExec> statementExecutorFactory,
-			@Nonnull RecordExtractor<In, JdbcIn> recordExtractor) {
+		@Nonnull JdbcConnectionProvider connectionProvider,
+		@Nonnull JdbcExecutionOptions executionOptions,
+		@Nonnull StatementExecutorFactory<JdbcExec> statementExecutorFactory,
+		@Nonnull RecordExtractor<In, JdbcIn> recordExtractor) {
 		super(connectionProvider);
 		this.executionOptions = checkNotNull(executionOptions);
 		this.statementExecutorFactory = checkNotNull(statementExecutorFactory);
@@ -150,7 +150,7 @@ public class JdbcBatchingOutputFormat<In, JdbcIn, JdbcExec extends JdbcBatchStat
 		try {
 			addToBatch(record, jdbcRecordExtractor.apply(record));
 			batchCount++;
-			if (executionOptions.getBatchSize() > 0 && batchCount >= executionOptions.getBatchSize()) {
+			if (batchCount >= executionOptions.getBatchSize()) {
 				flush();
 			}
 		} catch (Exception e) {
@@ -172,23 +172,44 @@ public class JdbcBatchingOutputFormat<In, JdbcIn, JdbcExec extends JdbcBatchStat
 				batchCount = 0;
 				break;
 			} catch (SQLException e) {
-				LOG.error("JDBC executeBatch error, retry times = {}", i, e);
+				//LOG.error("JDBC executeBatch error, retry times = {}", i, e);
+				//LOG.error(" step1 mengxp-test flush current error time [" +i+ "] maxRetry is ["+executionOptions.getMaxRetries()+"]");
 				if (i >= executionOptions.getMaxRetries()) {
-					throw new IOException(e);
+					//达到最大的次数是增加Mindlinker参数进行重连 在Flink-table-common和Sql-jdbc进行修改
+					LOG.warn(" step1  flush current error time ["+i+"] maxRetry is ["+executionOptions.getMaxRetries()+"]");
+					if(executionOptions.getMlReconnectionFlag()){
+						LOG.warn("step2 check-for-ml vaild connection status is false " +
+							"reestablishConnection starting ");
+						try {
+							connection = connectionProvider.reestablishConnection();
+							jdbcStatementExecutor.closeStatements();
+							jdbcStatementExecutor.prepareStatements(connection);
+							LOG.error("step3  reestablishConnection end  and connect status is["+connection.isValid(10)+"]");
+						} catch (Exception exception) {
+							throw new IOException("flag-Reestablish JDBC connection failed", exception);
+						}
+					}else{
+						LOG.error("step9 check-for-ml ReconnectionFlag is["+executionOptions.getMlReconnectionFlag()+"] throw IOException");
+						throw new IOException(e);
+					}
 				}
 				try {
+					LOG.warn("step4 flush error vaild connection status is false " +
+						"reestablishConnection starting ");
 					if (!connection.isValid(CONNECTION_CHECK_TIMEOUT_SECONDS)) {
 						connection = connectionProvider.reestablishConnection();
 						jdbcStatementExecutor.closeStatements();
 						jdbcStatementExecutor.prepareStatements(connection);
+						LOG.error("step5 reconnection-for-ml reestablishConnection end  and connect status is["+connection.isValid(10)+"]");
 					}
 				} catch (Exception excpetion) {
 					LOG.error("JDBC connection is not valid, and reestablish connection failed.", excpetion);
 					throw new IOException("Reestablish JDBC connection failed", excpetion);
 				}
 				try {
+					LOG.info("step6 mengxp-test reestablish end connection=["+connection.isValid(10)+"]");
 					Thread.sleep(1000 * i);
-				} catch (InterruptedException ex) {
+				} catch (Exception ex) {
 					Thread.currentThread().interrupt();
 					throw new IOException("unable to flush; interrupted while doing another attempt", e);
 				}

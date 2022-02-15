@@ -19,6 +19,8 @@
 package org.apache.flink.connector.jdbc.table;
 
 import org.apache.flink.annotation.Internal;
+import org.apache.flink.api.java.tuple.Tuple2;
+import org.apache.flink.api.java.tuple.builder.Tuple2Builder;
 import org.apache.flink.configuration.ConfigOption;
 import org.apache.flink.configuration.ConfigOptions;
 import org.apache.flink.configuration.ReadableConfig;
@@ -41,8 +43,11 @@ import org.apache.flink.util.Preconditions;
 import java.time.Duration;
 import java.util.Arrays;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Optional;
 import java.util.Set;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 import static org.apache.flink.util.Preconditions.checkState;
 
@@ -53,6 +58,7 @@ import static org.apache.flink.util.Preconditions.checkState;
 @Internal
 public class JdbcDynamicTableFactory implements DynamicTableSourceFactory, DynamicTableSinkFactory {
 
+    private static final Pattern RETRACT_KV_PATTERN = Pattern.compile("([^=,]+)=([^=,]*),?");
     public static final String IDENTIFIER = "jdbc";
     public static final ConfigOption<String> URL =
             ConfigOptions.key("url")
@@ -162,6 +168,13 @@ public class JdbcDynamicTableFactory implements DynamicTableSourceFactory, Dynam
                     .defaultValue(3)
                     .withDescription("The max retry times if writing records to database failed.");
 
+    private static final ConfigOption<String> SINK_RETRACT_KV =
+            ConfigOptions.key("sink.retract-kv")
+                    .stringType()
+                    .noDefaultValue()
+                    .withDescription(
+                            "The key and value of retract statement, update retract (delete retract default) will be enabled if it specified.");
+
     @Override
     public DynamicTableSink createDynamicTableSink(Context context) {
         final FactoryUtil.TableFactoryHelper helper =
@@ -177,7 +190,7 @@ public class JdbcDynamicTableFactory implements DynamicTableSourceFactory, Dynam
         return new JdbcDynamicTableSink(
                 jdbcOptions,
                 getJdbcExecutionOptions(config),
-                getJdbcDmlOptions(jdbcOptions, physicalSchema),
+                getJdbcDmlOptions(config, jdbcOptions, physicalSchema),
                 physicalSchema);
     }
 
@@ -248,7 +261,8 @@ public class JdbcDynamicTableFactory implements DynamicTableSourceFactory, Dynam
         return builder.build();
     }
 
-    private JdbcDmlOptions getJdbcDmlOptions(JdbcOptions jdbcOptions, TableSchema schema) {
+    private JdbcDmlOptions getJdbcDmlOptions(
+            ReadableConfig config, JdbcOptions jdbcOptions, TableSchema schema) {
         String[] keyFields =
                 schema.getPrimaryKey()
                         .map(pk -> pk.getColumns().toArray(new String[0]))
@@ -259,7 +273,51 @@ public class JdbcDynamicTableFactory implements DynamicTableSourceFactory, Dynam
                 .withDialect(jdbcOptions.getDialect())
                 .withFieldNames(schema.getFieldNames())
                 .withKeyFields(keyFields)
+                .withRetractFields(getRetractFields(keyFields, config))
                 .build();
+    }
+
+    private Tuple2<String, String>[] getRetractFields(String[] keyFields, ReadableConfig config) {
+        if (!config.getOptional(SINK_RETRACT_KV).isPresent()) {
+            return null;
+        }
+
+        // update retract only effect when primary key provided.
+        if (keyFields == null || keyFields.length == 0) {
+            return null;
+        }
+
+        List<String> primaryKeys = Arrays.asList(keyFields);
+        Tuple2Builder<String, String> tuple2Builder = new Tuple2Builder<>();
+        Matcher matcher = RETRACT_KV_PATTERN.matcher(config.get(SINK_RETRACT_KV));
+        while (matcher.find()) {
+            String columnName = matcher.group(1).trim();
+            if (primaryKeys.contains(columnName)) {
+                continue; // primary key column cannot be retract.
+            }
+
+            tuple2Builder.add(columnName, getRetractColumnValue(matcher));
+        }
+
+        Tuple2<String, String>[] retractFields = tuple2Builder.build();
+        if (retractFields.length == 0) {
+            return null;
+        }
+
+        return retractFields;
+    }
+
+    private String getRetractColumnValue(Matcher matcher) {
+        if (matcher.groupCount() < 2) {
+            return "";
+        }
+
+        String columnValue = matcher.group(2).trim();
+        if ("null".equalsIgnoreCase(columnValue)) {
+            return null;
+        }
+
+        return columnValue;
     }
 
     @Override
@@ -293,6 +351,7 @@ public class JdbcDynamicTableFactory implements DynamicTableSourceFactory, Dynam
         optionalOptions.add(SINK_BUFFER_FLUSH_MAX_ROWS);
         optionalOptions.add(SINK_BUFFER_FLUSH_INTERVAL);
         optionalOptions.add(SINK_MAX_RETRIES);
+        optionalOptions.add(SINK_RETRACT_KV);
         optionalOptions.add(FactoryUtil.SINK_PARALLELISM);
         optionalOptions.add(MAX_RETRY_TIMEOUT);
         return optionalOptions;
@@ -345,6 +404,16 @@ public class JdbcDynamicTableFactory implements DynamicTableSourceFactory, Dynam
                             SINK_MAX_RETRIES.key(), config.get(SINK_MAX_RETRIES)));
         }
 
+        if (config.getOptional(SINK_RETRACT_KV).isPresent()) {
+            String retractKV = config.get(SINK_RETRACT_KV);
+            if (!retractKV.matches(String.format("(%s)+", RETRACT_KV_PATTERN.pattern()))) {
+                throw new IllegalArgumentException(
+                        String.format(
+                                "The value of '%s' option should be formatted with pattern '(column = value ,?)+', but is '%s'.",
+                                SINK_RETRACT_KV.key(), config.get(SINK_RETRACT_KV)));
+            }
+        }
+
         if (config.get(MAX_RETRY_TIMEOUT).getSeconds() <= 0) {
             throw new IllegalArgumentException(
                     String.format(
@@ -359,7 +428,7 @@ public class JdbcDynamicTableFactory implements DynamicTableSourceFactory, Dynam
 
     private void checkAllOrNone(ReadableConfig config, ConfigOption<?>[] configOptions) {
         int presentCount = 0;
-        for (ConfigOption configOption : configOptions) {
+        for (ConfigOption<?> configOption : configOptions) {
             if (config.getOptional(configOption).isPresent()) {
                 presentCount++;
             }

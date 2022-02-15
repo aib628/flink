@@ -19,6 +19,7 @@
 package org.apache.flink.connector.jdbc.dialect;
 
 import org.apache.flink.annotation.Internal;
+import org.apache.flink.api.java.tuple.Tuple2;
 import org.apache.flink.connector.jdbc.internal.converter.JdbcRowConverter;
 import org.apache.flink.table.api.TableSchema;
 import org.apache.flink.table.api.ValidationException;
@@ -150,6 +151,30 @@ public interface JdbcDialect extends Serializable {
                 + setClause
                 + " WHERE "
                 + conditionClause;
+    }
+
+    default String getRetractUpdateStatement(
+            String tableName, Tuple2<String, String>[] retractFields, String[] conditionFields) {
+        String setClause =
+                Arrays.stream(retractFields)
+                        .map(
+                                f -> {
+                                    if (f.f1 == null) {
+                                        return format("%s = %s", quoteIdentifier(f.f0), "null");
+                                    }
+
+                                    return format("%s = '%s'", quoteIdentifier(f.f0), f.f1);
+                                })
+                        .collect(Collectors.joining(", "));
+
+        String conditionClause =
+                Arrays.stream(conditionFields)
+                        .map(f -> format("%s = :%s", quoteIdentifier(f), f))
+                        .collect(Collectors.joining(" AND "));
+
+        return String.format(
+                "UPDATE %s SET %s WHERE %s",
+                quoteIdentifier(tableName), setClause, conditionClause);
     }
 
     /**

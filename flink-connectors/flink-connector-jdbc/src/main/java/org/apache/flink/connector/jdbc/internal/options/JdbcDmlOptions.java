@@ -17,6 +17,7 @@
 
 package org.apache.flink.connector.jdbc.internal.options;
 
+import org.apache.flink.api.java.tuple.Tuple2;
 import org.apache.flink.connector.jdbc.dialect.JdbcDialect;
 import org.apache.flink.util.Preconditions;
 
@@ -36,6 +37,7 @@ public class JdbcDmlOptions extends JdbcTypedQueryOptions {
     @Nullable private final String[] keyFields;
     private final String tableName;
     private final JdbcDialect dialect;
+    @Nullable private final Tuple2<String, String>[] retractFields;
 
     public static JdbcDmlOptionsBuilder builder() {
         return new JdbcDmlOptionsBuilder();
@@ -46,12 +48,14 @@ public class JdbcDmlOptions extends JdbcTypedQueryOptions {
             JdbcDialect dialect,
             String[] fieldNames,
             int[] fieldTypes,
-            String[] keyFields) {
+            String[] keyFields,
+            Tuple2<String, String>[] retractFields) {
         super(fieldTypes);
         this.tableName = Preconditions.checkNotNull(tableName, "table is empty");
         this.dialect = Preconditions.checkNotNull(dialect, "dialect name is empty");
         this.fieldNames = Preconditions.checkNotNull(fieldNames, "field names is empty");
         this.keyFields = keyFields;
+        this.retractFields = retractFields;
     }
 
     public String getTableName() {
@@ -70,6 +74,10 @@ public class JdbcDmlOptions extends JdbcTypedQueryOptions {
         return Optional.ofNullable(keyFields);
     }
 
+    public Optional<Tuple2<String, String>[]> getRetractFields() {
+        return Optional.ofNullable(retractFields);
+    }
+
     @Override
     public boolean equals(Object o) {
         if (this == o) {
@@ -81,6 +89,7 @@ public class JdbcDmlOptions extends JdbcTypedQueryOptions {
         JdbcDmlOptions that = (JdbcDmlOptions) o;
         return Arrays.equals(fieldNames, that.fieldNames)
                 && Arrays.equals(keyFields, that.keyFields)
+                && Arrays.equals(retractFields, retractFields)
                 && Objects.equals(tableName, that.tableName)
                 && Objects.equals(dialect, that.dialect);
     }
@@ -90,6 +99,7 @@ public class JdbcDmlOptions extends JdbcTypedQueryOptions {
         int result = Objects.hash(tableName, dialect);
         result = 31 * result + Arrays.hashCode(fieldNames);
         result = 31 * result + Arrays.hashCode(keyFields);
+        result = 31 * result + Arrays.hashCode(retractFields);
         return result;
     }
 
@@ -100,6 +110,7 @@ public class JdbcDmlOptions extends JdbcTypedQueryOptions {
         private String[] fieldNames;
         private String[] keyFields;
         private JdbcDialect dialect;
+        private Tuple2<String, String>[] retractFields;
 
         @Override
         protected JdbcDmlOptionsBuilder self() {
@@ -136,8 +147,15 @@ public class JdbcDmlOptions extends JdbcTypedQueryOptions {
             return self();
         }
 
+        public final JdbcDmlOptionsBuilder withRetractFields(
+                Tuple2<String, String>[] retractFields) {
+            this.retractFields = retractFields;
+            return this;
+        }
+
         public JdbcDmlOptions build() {
-            return new JdbcDmlOptions(tableName, dialect, fieldNames, fieldTypes, keyFields);
+            return new JdbcDmlOptions(
+                    tableName, dialect, fieldNames, fieldTypes, keyFields, retractFields);
         }
 
         static String[] concat(String first, String... next) {

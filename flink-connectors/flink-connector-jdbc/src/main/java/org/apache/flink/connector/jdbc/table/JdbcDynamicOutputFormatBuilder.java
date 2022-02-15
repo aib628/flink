@@ -21,6 +21,7 @@ package org.apache.flink.connector.jdbc.table;
 import org.apache.flink.api.common.functions.RuntimeContext;
 import org.apache.flink.api.common.typeinfo.TypeInformation;
 import org.apache.flink.api.common.typeutils.TypeSerializer;
+import org.apache.flink.api.java.tuple.Tuple2;
 import org.apache.flink.connector.jdbc.JdbcExecutionOptions;
 import org.apache.flink.connector.jdbc.dialect.JdbcDialect;
 import org.apache.flink.connector.jdbc.internal.JdbcBatchingOutputFormat;
@@ -159,7 +160,7 @@ public class JdbcDynamicOutputFormatBuilder implements Serializable {
                         pkFields,
                         pkNames,
                         pkTypes),
-                createDeleteExecutor(dialect, tableName, pkNames, pkTypes),
+                createRetractExecutor(opt, dialect, tableName, pkNames, pkTypes),
                 createRowKeyExtractor(fieldTypes, pkFields),
                 valueTransform);
     }
@@ -202,10 +203,34 @@ public class JdbcDynamicOutputFormatBuilder implements Serializable {
                                         pkTypes));
     }
 
+    private static JdbcBatchStatementExecutor<RowData> createRetractExecutor(
+            JdbcDmlOptions opt,
+            JdbcDialect dialect,
+            String tableName,
+            String[] pkNames,
+            LogicalType[] pkTypes) {
+        if (opt.getRetractFields().isPresent()) {
+            return createRetractUpdateExecutor(
+                    dialect, tableName, pkNames, pkTypes, opt.getRetractFields().get());
+        } else {
+            return createDeleteExecutor(dialect, tableName, pkNames, pkTypes);
+        }
+    }
+
     private static JdbcBatchStatementExecutor<RowData> createDeleteExecutor(
             JdbcDialect dialect, String tableName, String[] pkNames, LogicalType[] pkTypes) {
         String deleteSql = dialect.getDeleteStatement(tableName, pkNames);
         return createSimpleRowExecutor(dialect, pkNames, pkTypes, deleteSql);
+    }
+
+    private static JdbcBatchStatementExecutor<RowData> createRetractUpdateExecutor(
+            JdbcDialect dialect,
+            String tableName,
+            String[] pkNames,
+            LogicalType[] pkTypes,
+            Tuple2<String, String>[] retractFields) {
+        String updateSql = dialect.getRetractUpdateStatement(tableName, retractFields, pkNames);
+        return createSimpleRowExecutor(dialect, pkNames, pkTypes, updateSql);
     }
 
     private static JdbcBatchStatementExecutor<RowData> createSimpleRowExecutor(

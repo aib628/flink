@@ -24,6 +24,7 @@ import org.apache.flink.api.java.tuple.Tuple2;
 import org.apache.flink.api.java.typeutils.RowTypeInfo;
 import org.apache.flink.api.java.typeutils.TupleTypeInfo;
 import org.apache.flink.connector.jdbc.JdbcExecutionOptions;
+import org.apache.flink.connector.jdbc.Printer;
 import org.apache.flink.connector.jdbc.internal.AbstractJdbcOutputFormat;
 import org.apache.flink.connector.jdbc.internal.GenericJdbcSinkFunction;
 import org.apache.flink.connector.jdbc.internal.JdbcBatchingOutputFormat;
@@ -95,6 +96,7 @@ public class JdbcUpsertTableSink implements UpsertStreamTableSink<Row> {
 
     @Override
     public DataStreamSink<?> consumeDataStream(DataStream<Tuple2<Boolean, Row>> dataStream) {
+        Printer.printStack();
         return dataStream
                 .addSink(new GenericJdbcSinkFunction<>(newFormat()))
                 .setParallelism(dataStream.getParallelism())
